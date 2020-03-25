@@ -37,6 +37,7 @@
  */
 
 #include <spinlock.h>
+#include <limits.h>
 
 struct addrspace;
 struct thread;
@@ -71,7 +72,9 @@ struct proc {
 	struct vnode *p_cwd;		/* current working directory */
 
 	/* add more material here as needed */
-	struct fileDescriptorTable *p_fdt;		/* file descriptor table */
+
+	/* File descriptor table */
+	int *p_fdt[OPEN_MAX];	/* Each entry corresponds to an index in the global open file table */
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */

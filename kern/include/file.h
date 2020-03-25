@@ -15,14 +15,9 @@
  * Put your function declarations and data types here ...
  */
 
-/* Per-process file descriptor array */
-typedef struct fileDescriptorTable {
-    int fdtArray[OPEN_MAX]; /* Array contains pointers to open file table entries */
-} fileDescriptorTable;
-
 /* Open file table array */
 typedef struct openFileTable {
-    struct lock *openFileTableLock; /* A simple lock for the open file table to provide mutual exclusion */
+    struct lock *oftLock; /* A simple lock for the open file table to provide mutual exclusion */
     oftEntry *oftArray[OPEN_MAX]; /* Each entry in array is of type oftEntry */
 } openFileTable;
 
