@@ -19,30 +19,137 @@
  * Add your file-related functions here ...
  */
 
-/* Attach stdout and stderr to the console device */
-int consoleDeviceSetup(void);
-
 /* Initialise the global open file table array */
-int openFileTableSetup(void);
+int openFileTableSetup(void) {
+
+    /* We assign the memory for the table on the heap */
+    oft = kmalloc(sizeof(openFileTable));
+
+    /* If the malloc failed, we return an error signalling we are out of memory */
+    if (oft == NULL) {
+        return ENOMEM;
+    }
+
+    /* Now the open file table is created, we first create the lock for it */
+    oft->oftLock = lock_create("oftLock");
+
+    /* If this failed, we return an error signalling we are out of memory*/
+    if (oft->oftLock == NULL) {
+        return ENOMEM;
+    }
+
+    /* And finally we initialise the array to be empty */
+    int i = 0;
+    while (i < OPEN_MAX) {
+        oft->oftArray[i] = NULL;
+        i++;
+    }
+
+    return 0;
+}
 
 /* Initialise the file descriptor array for the current process */
-int fileDescriptorTableSetup(void);
+int fileDescriptorTableSetup(void) {
+
+    /* First we assign the memory for the file descriptor table on the heap */
+    curproc->p_fdt = kmalloc(sizeof(int) * OPEN_MAX);
+
+    /* If this failed, we return an error signalling we are out of memory */
+    if (curproc->p_fdt == NULL) {
+        return ENOMEM;
+    }
+
+    /* Then we simply declare all entries in this array as closed */
+    int i = 0;
+    while (i < OPEN_MAX) {
+        curproc->p_fdt[i] = -1;
+        i++;
+    }
+
+    return 0;
+}
+
+/* Attach stdout and stderr to the console device */
+int consoleDeviceSetup(void) {
+
+    int i = 1;
+    while (i <= 2) {
+
+        /* First we initialise the variables needed for the 
+        upcoming vfs_open call */
+        char c[] = "con:";
+        int f = O_WRONLY;
+        int m = 0;
+        struct vnode *v;
+
+        /* Now we attach stdout to the console device */
+        int result = vfs_open(c, f, m, &v);
+        if (result) {
+            return result;
+        }
+
+        /* Next we acquire the lock for the open file table,
+        as we are about to add an entry */
+        lock_acquire(oft->oftLock);
+
+        /* We allocate memory on the heap for the entry to be
+        added to the open file table at index 1 for stdout
+        and index 2 for stderr */
+        oft->oftArray[i] = kmalloc(sizeof(oftEntry));
+
+        /* If this failed, we return an error signalling we are out of memory */
+        if (oft->oftArray == NULL) {
+            return ENOMEM;
+        }
+
+        /* We assign the processes' file descriptor to the index
+        in the global open file table */
+        curproc->p_fdt[i] = i;
+
+        /* Then we assign all of the information needed 
+        in the open file table entry*/
+        oft->oftArray[i]->vnode = v;
+        oft->oftArray[i]->fp = 0;
+        oft->oftArray[i]->flags = f;
+        oft->oftArray[i]->referenceCount = 1;
+
+        /* Once we are done adding this entry, we can release the lock */
+        lock_release(oft->oftLock);
+
+        i++;
+    }
+
+    return 0;
+}
 
 /* Open a file */
-int sys_open(userptr_t filename, int flags, mode_t mode);
+int sys_open(userptr_t filename, int flags, mode_t mode) {
+    // TODO
+    // NOTE: very similar to consoleDeviceSetup
+}
 
 /* Read data from file */
-ssize_t sys_read(int fd, void *buf, size_t buflen);
+ssize_t sys_read(int fd, void *buf, size_t buflen) {
+    // TODO
+}
 
 /* Write data to file */
-ssize_t sys_write(int fd, void *buf, size_t nbytes);
+ssize_t sys_write(int fd, void *buf, size_t nbytes) {
+    // TODO
+}
 
 /* Change current position in file */
-off_t sys_lseek(int fd, off_t pos, int whence);
+off_t sys_lseek(int fd, off_t pos, int whence) {
+    // TODO
+}
 
 /* Close file */
-int sys_close(int fd);
+int sys_close(int fd) {
+    // TODO
+}
 
 /* Clone file handles */
-int sys_dup2(int oldfd, int newfd);
+int sys_dup2(int oldfd, int newfd) {
+    // TODO
+}
 

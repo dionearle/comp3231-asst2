@@ -59,19 +59,22 @@ runprogram(char *progname)
 	vaddr_t entrypoint, stackptr;
 	int result;
 
-	/* Attach stdout and stderr to the console device */
+	/* If the global open file table array is not yet initialised,
+	do so here */
+	if (oft == NULL) {
+		result = openFileTableSetup();
+		if (result) {
+			return result;
+		}
+	}
+
+	/* Initialise the file descriptor array for the current process*/
 	result = consoleDeviceSetup();
 	if (result) {
 		return result;
 	}
 
-	/* Initialise the global open file table array */
-	result = openFileTableSetup();
-	if (result) {
-		return result;
-	}
-
-	/* Initialise the file descriptor array for the current process*/
+	/* Attach stdout and stderr to the console device */
 	result = consoleDeviceSetup();
 	if (result) {
 		return result;
