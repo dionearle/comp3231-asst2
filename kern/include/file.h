@@ -24,7 +24,7 @@ typedef struct openFileTable {
 /* Entry in the open file table array */
 typedef struct oftEntry {
     struct vnode *vnode; /* Pointer to the vnode for the file */
-    off_t offset; /* The file's offset for reading and writing */
+    off_t fp; /* Filepointer provides the offset for reading and writing */
     int flags; /* Outlines the permissions of the file */
     int referenceCount; /* Tracks how many references of the file exist */
 } oftEntry;

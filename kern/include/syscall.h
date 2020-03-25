@@ -60,13 +60,13 @@ int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 
 /* Open a file */
-int sys_open(const char *filename, int flags, mode_t mode);
+int sys_open(userptr_t filename, int flags, mode_t mode);
 
 /* Read data from file */
 ssize_t sys_read(int fd, void *buf, size_t buflen);
 
 /* Write data to file */
-ssize_t sys_write(int fd, const void *buf, size_t nbytes);
+ssize_t sys_write(int fd, void *buf, size_t nbytes);
 
 /* Change current position in file */
 off_t sys_lseek(int fd, off_t pos, int whence);
