@@ -243,7 +243,43 @@ off_t sys_lseek(int fd, off_t pos, int whence) {
 
 /* Close file */
 int sys_close(int fd) {
-    // TODO
+
+    /* First we want to match the fd to the entry in the open file table */
+    int oftIndex = curproc->p_fdt[fd];
+
+    /* Then we check that the fd is a valid file handle */
+    if (fd < 0 || fd >= OPEN_MAX || oftIndex == -1) {
+        return EBADF;
+    }
+
+    /* Next we acquire the lock for the open file table,
+    as we are about to delete an entry */
+    lock_acquire(oft->oftLock);
+
+    /* We also check to see if the reference to the open file table is valid */
+    if (oft->oftArray[oftIndex] == NULL) {
+        lock_release(oft->oftLock);
+        return EBADF;
+    }
+
+    /* If there are other references to this vnode,
+    we simply decrement the reference count */
+    if (oft->oftArray[oftIndex]->referenceCount > 1) {
+        oft->oftArray[oftIndex]->referenceCount--;
+    /* Else if this is the only reference, we want to close the vnode */
+    } else {
+        vfs_close(oft->oftArray[oftIndex]->vnode);
+        kfree(oft->oftArray[oftIndex]);
+        oft->oftArray[oftIndex] = NULL;
+    }
+
+    /* After removing this entry, we can release the lock */
+    lock_release(oft->oftLock);
+
+    /* Finally we declare this entry in the file descriptor table as closed */
+    curproc->p_fdt[fd] = -1;
+
+    return 0;
 }
 
 /* Clone file handles */
