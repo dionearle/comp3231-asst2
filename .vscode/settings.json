@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "current.h": "c",
+        "copyinout.h": "c",
+        "syscall.h": "c"
+    }
+}

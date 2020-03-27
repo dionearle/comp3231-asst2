@@ -14,6 +14,7 @@
 #include <file.h>
 #include <syscall.h>
 #include <copyinout.h>
+#include <proc.h>
 
 /*
  * Add your file-related functions here ...
@@ -125,7 +126,7 @@ int consoleDeviceSetup(void) {
 }
 
 /* Open a file */
-int sys_open(userptr_t filename, int flags, mode_t mode) {
+int sys_open(userptr_t filename, int flags, mode_t mode, int32_t* retval) {
     
     /* First we check that filename is a valid pointer */
     if (filename == NULL) {
@@ -222,14 +223,15 @@ int sys_open(userptr_t filename, int flags, mode_t mode) {
     lock_release(oft->oftLock);
 
     /* We return the file handle */
-    return fdtIndex;
+    *retval = (int32_t)fdtIndex;
+    return 0;
 
 }
 
 
 /* Create a uio struct for use with VOP_READ and VOP_WRITE */
 void uio_uinit(struct iovec *iov, struct uio *u, userptr_t buf, size_t len, off_t offset, enum uio_rw rw){
-    iov->iov_ubase  = buff;
+    iov->iov_ubase  = buf;
     iov->iov_len    = len;
 
     u->uio_iov      = iov;
@@ -242,7 +244,7 @@ void uio_uinit(struct iovec *iov, struct uio *u, userptr_t buf, size_t len, off_
 }
 
 /* Read data from file */
-ssize_t sys_read(int fd, void *buf, size_t buflen) {
+ssize_t sys_read(int fd, void *buf, size_t buflen, int32_t* retval) {
 
     /* First we need to check that the fd is a valid file handle */
     if (fd < 0 || fd >= OPEN_MAX) {
@@ -255,12 +257,8 @@ ssize_t sys_read(int fd, void *buf, size_t buflen) {
         return EBADF;
     }
 
-    /* Copy in the user's pointer */
-    void *safeBuff[bufflen];
-    int result = copyin((userptr_t)buf, safeBuff, buflen);
-    if (result) {
-        return result;
-    }
+    /* Set up the kernel buffer */
+    void *safeBuff[buflen];
 
 
     /* Next we acquire the lock for the open file table, as we are about to modify the file pointer */
@@ -271,12 +269,12 @@ ssize_t sys_read(int fd, void *buf, size_t buflen) {
     int offset = oft->oftArray[oftIndex]->fp;
 
     /* Next create the uio variable that needs to be passed to VOP_READ*/
-    struct iovec iov;
-    struct uio u;
-    uio_uinit(&iov, &u, safeBuff, buflen, offset, UIO_READ);
+    struct iovec *iov = kmalloc(sizeof(struct iovec));
+    struct uio *u = kmalloc(sizeof(struct uio));
+    uio_uinit(iov, u, (userptr_t)safeBuff, buflen, offset, UIO_READ);
 
     /* Call the VOP_READ macro*/
-    result = VOP_READ(oft->oftArray[oftIndex]->vn, &u);
+    int result = VOP_READ(oft->oftArray[oftIndex]->vnode, u);
     if (result) {
         return result;
     }
@@ -287,12 +285,24 @@ ssize_t sys_read(int fd, void *buf, size_t buflen) {
     /* Release the lock */
     lock_release(oft->oftLock);
 
+    /* Free malloced memory */
+    kfree(u);
+    kfree(iov);
+
+    /* Copy data to the user's pointer */
+    result = copyout(safeBuff, (userptr_t)buf, buflen);
+    if (result) {
+        return result;
+    }
+
+
     /* Return the amount read*/
-    return u->uio_resid;
+    *retval = u->uio_resid;
+    return 0;
 }
 
 /* Write data to file */
-ssize_t sys_write(int fd, void *buf, size_t nbytes) {
+ssize_t sys_write(int fd, void *buf, size_t nbytes, int32_t* retval) {
 
     /* First we need to check that the fd is a valid file handle */
     if (fd < 0 || fd >= OPEN_MAX) {
@@ -306,8 +316,8 @@ ssize_t sys_write(int fd, void *buf, size_t nbytes) {
     }
 
     /* Copy in the user's pointer */
-    void *safeBuff[bufflen];
-    int result = copyin((userptr_t)buf, safeBuff, buflen);
+    void *safeBuff[nbytes];
+    int result = copyin((userptr_t)buf, safeBuff, nbytes);
     if (result) {
         return result;
     }
@@ -321,12 +331,12 @@ ssize_t sys_write(int fd, void *buf, size_t nbytes) {
     int offset = oft->oftArray[oftIndex]->fp;
 
     /* Next create the uio variable that needs to be passed to VOP_READ*/
-    struct iovec iov;
-    struct uio u;
-    uio_uinit(&iov, &u, safeBuff, buflen, offset, UIO_WRITE);
+    struct iovec *iov = kmalloc(sizeof(struct iovec));
+    struct uio *u = kmalloc(sizeof(struct uio));
+    uio_uinit(iov, u, (userptr_t)safeBuff, nbytes, offset, UIO_WRITE);
 
     /* Call the VOP_READ macro*/
-    result = VOP_WRITE(oft->oftArray[oftIndex]->vn, &u);
+    result = VOP_WRITE(oft->oftArray[oftIndex]->vnode, u);
     if (result) {
         return result;
     }
@@ -337,12 +347,17 @@ ssize_t sys_write(int fd, void *buf, size_t nbytes) {
     /* Release the lock */
     lock_release(oft->oftLock);
 
+    /* Free malloced memory */
+    kfree(u);
+    kfree(iov);
+
     /* Return the amount read*/
-    return u->uio_resid;
+    *retval = u->uio_resid;
+    return 0;
 }
 
 /* Change current position in file */
-off_t sys_lseek(int fd, off_t pos, int whence) {
+off_t sys_lseek(int fd, off_t pos, int whence, int64_t* retval) {
 
     /* First we need to check that the fd is a valid file handle */
     if (fd < 0 || fd >= OPEN_MAX) {
@@ -360,7 +375,7 @@ off_t sys_lseek(int fd, off_t pos, int whence) {
     lock_acquire(oft->oftLock);
 
     /* Check that the given file is seekable */
-    bool isSeekable = VOP_ISSEEKABLE(oft->oftArray[oftIndex]->vn);
+    bool isSeekable = VOP_ISSEEKABLE(oft->oftArray[oftIndex]->vnode);
     if (!isSeekable){
         return ESPIPE;
     }
@@ -369,19 +384,28 @@ off_t sys_lseek(int fd, off_t pos, int whence) {
 
     /* Identify the whence option */
     if (whence == SEEK_SET){
+        /* Set file pointer to the position relative to the start of the file */
         newFP = pos;
     }
     else if (whence == SEEK_CUR){
+        /* Set file pointer to the position relative to the current position */
         newFP = oft->oftArray[oftIndex]->fp;
     }
     else if (whence == SEEK_END){
-        struct stat fStat;
-        result = VOP_STAT(oft->oftArray[oftIndex]->vn, &fStat);
+        /* Set file pointer to the position relative to the end of the file */
+
+        /* Get the size of the current file */
+        struct stat *fStat = kmalloc(sizeof(struct stat));
+        int result = VOP_STAT(oft->oftArray[oftIndex]->vnode, fStat);
         if (result) {
             return result;
         }
 
+        /* Calculate the new file pointer */
         newFP = fStat->st_size + oft->oftArray[oftIndex]->fp;
+
+        /* Free malloced memory */
+        kfree(fStat);
     }
     else {
         return EINVAL;
@@ -399,11 +423,12 @@ off_t sys_lseek(int fd, off_t pos, int whence) {
     lock_release(oft->oftLock);
 
     /* return the new file pointer */
-    return newFP;
+    *retval = newFP;
+    return 0;
 }
 
 /* Close file */
-int sys_close(int fd) {
+int sys_close(int fd, int32_t* retval) {
 
     /* First we want to match the fd to the entry in the open file table */
     int oftIndex = curproc->p_fdt[fd];
@@ -440,11 +465,12 @@ int sys_close(int fd) {
     /* After removing this entry, we can release the lock */
     lock_release(oft->oftLock);
 
+    *retval = 0;
     return 0;
 }
 
 /* Clone file handles */
-int sys_dup2(int oldfd, int newfd) {
+int sys_dup2(int oldfd, int newfd, int32_t* retval) {
     
     /* First we want to match the oldfd to the entry in the open file table */
     int oftIndex = curproc->p_fdt[oldfd];
@@ -480,7 +506,7 @@ int sys_dup2(int oldfd, int newfd) {
     if (curproc->p_fdt[newfd] != -1) {
 
         /* We close the file by using our implemented sys_close */
-        int result = sys_close(newfd);
+        int result = sys_close(newfd, retval);
         if (result) {
             lock_release(oft->oftLock);
             return result;
@@ -498,7 +524,8 @@ int sys_dup2(int oldfd, int newfd) {
     lock_release(oft->oftLock);
 
     /* We simply return newfd */
-    return newfd;
+    *retval = newfd;
+    return 0;
 
 }
 

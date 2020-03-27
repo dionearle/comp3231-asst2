@@ -60,21 +60,21 @@ int sys_reboot(int code);
 int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 
 /* Open a file */
-int sys_open(userptr_t filename, int flags, mode_t mode);
+int sys_open(userptr_t filename, int flags, mode_t mode, int32_t* retval);
 
 /* Read data from file */
-ssize_t sys_read(int fd, void *buf, size_t buflen);
+ssize_t sys_read(int fd, void *buf, size_t buflen, int32_t* retval);
 
 /* Write data to file */
-ssize_t sys_write(int fd, void *buf, size_t nbytes);
+ssize_t sys_write(int fd, void *buf, size_t nbytes, int32_t* retval);
 
 /* Change current position in file */
-off_t sys_lseek(int fd, off_t pos, int whence);
+off_t sys_lseek(int fd, off_t pos, int whence, int64_t* retval);
 
 /* Close file */
-int sys_close(int fd);
+int sys_close(int fd, int32_t* retval);
 
 /* Clone file handles */
-int sys_dup2(int oldfd, int newfd);
+int sys_dup2(int oldfd, int newfd, int32_t* retval);
 
 #endif /* _SYSCALL_H_ */

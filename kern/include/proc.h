@@ -74,7 +74,7 @@ struct proc {
 	/* add more material here as needed */
 
 	/* File descriptor table */
-	int *p_fdt[OPEN_MAX];	/* Each entry corresponds to an index in the global open file table */
+	int *p_fdt;	/* Each entry corresponds to an index in the global open file table */
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */

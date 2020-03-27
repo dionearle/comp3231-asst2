@@ -35,6 +35,8 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
+#include <copyinout.h>
+#include <endian.h>
 
 
 /*
@@ -82,6 +84,11 @@ syscall(struct trapframe *tf)
 	int32_t retval;
 	int err;
 
+	/* Variables for lseek option, cannot be defined in a switch statement */
+	uint64_t offset;
+	int whence;
+	off_t retval64;
+
 	KASSERT(curthread != NULL);
 	KASSERT(curthread->t_curspl == 0);
 	KASSERT(curthread->t_iplhigh_count == 0);
@@ -112,36 +119,32 @@ syscall(struct trapframe *tf)
 	    /* Add stuff here */
 
 		case SYS_open:
-		retval = sys_open((userptr_t)tf->tf_a0, (int)tf->tf_a1, (mode_t)tf->tf_a2);
+		err = sys_open((userptr_t)tf->tf_a0, (int)tf->tf_a1, (mode_t)tf->tf_a2, &retval);
 		break;
 
 		case SYS_read:
-		retval = sys_read((int)tf->tf_a0, (void *)tf->tf_a1, (size_t)tf->tf_a2);
+		err = sys_read((int)tf->tf_a0, (void *)tf->tf_a1, (size_t)tf->tf_a2, &retval);
 		break;
 
 		case SYS_write:
-		retval = sys_write((int)tf->tf_a0, (void *)tf->tf_a1, (size_t)tf->tf_a2);
+		err = sys_write((int)tf->tf_a0, (void *)tf->tf_a1, (size_t)tf->tf_a2, &retval);
 		break;
 
 		case SYS_lseek:
-		uint64_t offset;
-		int whence;
-		off_t retval64;
 				
 		join32to64(tf->tf_a2, tf->tf_a3, &offset);
 		copyin((userptr_t)tf->tf_sp + 16, &whence, sizeof(int));
 		
-		retval64 = sys_lseek((int)tf->tf_a0, (off_t)offset, whence);
+		err = sys_lseek((int)tf->tf_a0, (off_t)offset, whence, &retval64);
 		
-		split64to32(retval64, &tf->tf_v0, &tf->tf_v1);
 		break;
 
 		case SYS_close:
-		retval = sys_close((int)tf->tf_a0);
+		err = sys_close((int)tf->tf_a0, &retval);
 		break;
 
 		case SYS_dup2:
-		retval = sys_dup2((int)tf->tf_a0, (int)tf->tf_a1);
+		err = sys_dup2((int)tf->tf_a0, (int)tf->tf_a1, &retval);
 		break;
 
 	    default:
@@ -162,7 +165,11 @@ syscall(struct trapframe *tf)
 	}
 	else {
 		/* Success. */
-		tf->tf_v0 = retval;
+		if (retval64) {
+			split64to32(retval64, &tf->tf_v0, &tf->tf_v1);
+		} else {
+			tf->tf_v0 = retval;
+		}
 		tf->tf_a3 = 0;      /* signal no error */
 	}
 

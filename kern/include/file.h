@@ -9,16 +9,11 @@
  * Contains some file-related maximum length constants
  */
 #include <limits.h>
+#include <uio.h>
 
 /*
  * Put your function declarations and data types here ...
  */
-
-/* Open file table array */
-typedef struct _openFileTable {
-    struct lock *oftLock; /* A simple lock for the open file table to provide mutual exclusion */
-    oftEntry *oftArray[OPEN_MAX]; /* Each entry in array is of type oftEntry */
-} openFileTable;
 
 /* Entry in the open file table array */
 typedef struct _oftEntry {
@@ -27,6 +22,12 @@ typedef struct _oftEntry {
     int flags; /* Outlines the permissions of the file */
     int referenceCount; /* Tracks how many references of the file exist */
 } oftEntry;
+
+/* Open file table array */
+typedef struct _openFileTable {
+    struct lock *oftLock; /* A simple lock for the open file table to provide mutual exclusion */
+    oftEntry *oftArray[OPEN_MAX]; /* Each entry in array is of type oftEntry */
+} openFileTable;
 
 /* Global open file table */
 openFileTable *oft;
@@ -40,4 +41,6 @@ int fileDescriptorTableSetup(void);
 /* Attach stdout and stderr to the console device */
 int consoleDeviceSetup(void);
 
+/* Attach stdout and stderr to the console device */
+void uio_uinit(struct iovec *iov, struct uio *u, userptr_t buf, size_t len, off_t offset, enum uio_rw rw);
 #endif /* _FILE_H_ */
