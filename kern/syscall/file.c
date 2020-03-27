@@ -226,13 +226,73 @@ int sys_open(userptr_t filename, int flags, mode_t mode) {
 
 }
 
+
+/* Create a uio struct for use with VOP_READ and VOP_WRITE */
+void uio_uinit(struct iovec *iov, struct uio *u, userptr_t buf, size_t len, off_t offset, enum uio_rw rw){
+    iov->iov_ubase  = buff;
+    iov->iov_len    = len;
+
+    u->uio_iov      = iov;
+    u->uio_iovcnt   = 1;
+    u->uio_offset   = offset;
+    u->uio_resid    = len;
+    u->uio_segflg   = UIO_USERSPACE;
+    u->uio_rw       = rw;
+    u->uio_space    = proc_getas();
+}
+
 /* Read data from file */
-ssize_t sys_read(int fd, void *buf, size_t buflen) {
-    // TODO
+ssize_t sys_read(int fd, userptr_t buf, size_t buflen) {
+
+    /* First we need to check that the fd is a valid file handle */
+    if (fd < 0 || fd >= OPEN_MAX) {
+        return EBADF;
+    }
+
+    /* Then we need to match it to an entry in the open file table, and check that the entry has been opened*/
+    int oftIndex = curproc->p_fdt[fd];
+    if (oftIndex == -1) {
+        return EBADF;
+    }
+
+    /* Copy in the user's pointer */
+    void *safeBuff[bufflen];
+    int result = copyin(buf, safeBuff, buflen);
+    if (result) {
+        return result;
+    }
+
+
+    /* Next we acquire the lock for the open file table, as we are about to modify the file pointer */
+    lock_acquire(oft->oftLock);
+
+    /* Then we load the current offset (file pointer) */
+
+    int offset = oft->oftArray[oftIndex]->fp;
+
+    /* Next create the uio variable that needs to be passed to VOP_READ*/
+    struct iovec iov;
+    struct uio u;
+    uio_uinit(iov, u, safeBuff, buflen, offset, UIO_USERSPACE);
+
+    /* Call the VOP_READ macro*/
+    result = VOP_READ(oft->oftArray[oftIndex]->vn, u)
+    if (result) {
+        return result;
+    }
+
+    /* Update the offset (file pointer) */
+    oft->oftArray[oftIndex]->fp = u->uio_offset;
+
+    /* Release the lock */
+    lock_release(oft->oftLock);
+
+    /* Return the amount read*/
+    return u->uio_resid;
 }
 
 /* Write data to file */
-ssize_t sys_write(int fd, void *buf, size_t nbytes) {
+ssize_t sys_write(int fd, userptr_t buf, size_t nbytes) {
     // TODO
 }
 
