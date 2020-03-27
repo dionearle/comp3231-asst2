@@ -242,7 +242,7 @@ void uio_uinit(struct iovec *iov, struct uio *u, userptr_t buf, size_t len, off_
 }
 
 /* Read data from file */
-ssize_t sys_read(int fd, userptr_t buf, size_t buflen) {
+ssize_t sys_read(int fd, void *buf, size_t buflen) {
 
     /* First we need to check that the fd is a valid file handle */
     if (fd < 0 || fd >= OPEN_MAX) {
@@ -257,7 +257,7 @@ ssize_t sys_read(int fd, userptr_t buf, size_t buflen) {
 
     /* Copy in the user's pointer */
     void *safeBuff[bufflen];
-    int result = copyin(buf, safeBuff, buflen);
+    int result = copyin((userptr_t)buf, safeBuff, buflen);
     if (result) {
         return result;
     }
@@ -273,10 +273,10 @@ ssize_t sys_read(int fd, userptr_t buf, size_t buflen) {
     /* Next create the uio variable that needs to be passed to VOP_READ*/
     struct iovec iov;
     struct uio u;
-    uio_uinit(iov, u, safeBuff, buflen, offset, UIO_USERSPACE);
+    uio_uinit(&iov, &u, safeBuff, buflen, offset, UIO_READ);
 
     /* Call the VOP_READ macro*/
-    result = VOP_READ(oft->oftArray[oftIndex]->vn, u)
+    result = VOP_READ(oft->oftArray[oftIndex]->vn, &u);
     if (result) {
         return result;
     }
@@ -292,7 +292,7 @@ ssize_t sys_read(int fd, userptr_t buf, size_t buflen) {
 }
 
 /* Write data to file */
-ssize_t sys_write(int fd, userptr_t buf, size_t nbytes) {
+ssize_t sys_write(int fd, void *buf, size_t nbytes) {
 
     /* First we need to check that the fd is a valid file handle */
     if (fd < 0 || fd >= OPEN_MAX) {
@@ -307,7 +307,7 @@ ssize_t sys_write(int fd, userptr_t buf, size_t nbytes) {
 
     /* Copy in the user's pointer */
     void *safeBuff[bufflen];
-    int result = copyin(buf, safeBuff, buflen);
+    int result = copyin((userptr_t)buf, safeBuff, buflen);
     if (result) {
         return result;
     }
@@ -323,10 +323,10 @@ ssize_t sys_write(int fd, userptr_t buf, size_t nbytes) {
     /* Next create the uio variable that needs to be passed to VOP_READ*/
     struct iovec iov;
     struct uio u;
-    uio_uinit(iov, u, safeBuff, buflen, offset, UIO_USERSPACE);
+    uio_uinit(&iov, &u, safeBuff, buflen, offset, UIO_WRITE);
 
     /* Call the VOP_READ macro*/
-    result = VOP_WRITE(oft->oftArray[oftIndex]->vn, u)
+    result = VOP_WRITE(oft->oftArray[oftIndex]->vn, &u);
     if (result) {
         return result;
     }
@@ -343,7 +343,63 @@ ssize_t sys_write(int fd, userptr_t buf, size_t nbytes) {
 
 /* Change current position in file */
 off_t sys_lseek(int fd, off_t pos, int whence) {
-    // TODO
+
+    /* First we need to check that the fd is a valid file handle */
+    if (fd < 0 || fd >= OPEN_MAX) {
+        return EBADF;
+    }
+
+    /* Then we need to match it to an entry in the open file table, and check that the entry has been opened*/
+    int oftIndex = curproc->p_fdt[fd];
+    if (oftIndex == -1) {
+        return EBADF;
+    }
+
+
+    /* Next we acquire the lock for the open file table, as we are about to modify the file pointer */
+    lock_acquire(oft->oftLock);
+
+    /* Check that the given file is seekable */
+    bool isSeekable = VOP_ISSEEKABLE(oft->oftArray[oftIndex]->vn);
+    if (!isSeekable){
+        return ESPIPE;
+    }
+
+    off_t newFP;
+
+    /* Identify the whence option */
+    if (whence == SEEK_SET){
+        newFP = pos;
+    }
+    else if (whence == SEEK_CUR){
+        newFP = oft->oftArray[oftIndex]->fp;
+    }
+    else if (whence == SEEK_END){
+        struct stat fStat;
+        result = VOP_STAT(oft->oftArray[oftIndex]->vn, &fStat);
+        if (result) {
+            return result;
+        }
+
+        newFP = fStat->st_size + oft->oftArray[oftIndex]->fp;
+    }
+    else {
+        return EINVAL;
+    }
+
+    /* Check that the new file pointer is valid*/
+    if (newFP < 0){
+        return EINVAL;
+    }
+
+    /* Update the file pointer */
+    oft->oftArray[oftIndex]->fp = newFP;
+
+    /* Release the lock */
+    lock_release(oft->oftLock);
+
+    /* return the new file pointer */
+    return newFP;
 }
 
 /* Close file */
