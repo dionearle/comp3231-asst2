@@ -99,6 +99,8 @@ int consoleDeviceSetup(void) {
 
         /* If this failed, we return an error signalling we are out of memory */
         if (oft->oftArray == NULL) {
+            vfs_close(v);
+            lock_release(oft->oftLock);
             return ENOMEM;
         }
 
@@ -107,7 +109,7 @@ int consoleDeviceSetup(void) {
         curproc->p_fdt[i] = i;
 
         /* Then we assign all of the information needed 
-        in the open file table entry*/
+        in the open file table entry */
         oft->oftArray[i]->vnode = v;
         oft->oftArray[i]->fp = 0;
         oft->oftArray[i]->flags = f;
@@ -124,8 +126,104 @@ int consoleDeviceSetup(void) {
 
 /* Open a file */
 int sys_open(userptr_t filename, int flags, mode_t mode) {
-    // TODO
-    // NOTE: very similar to consoleDeviceSetup
+    
+    /* First we check that filename is a valid pointer */
+    if (filename == NULL) {
+        return EFAULT;
+    }
+
+    /* Then we obtain a copy of the filename inside the buffer
+    using copyinstr */
+    char filenameCopy[PATH_MAX];
+    int result = copyinstr(filename, filenameCopy, PATH_MAX, NULL);
+    if (result) {
+        return result;
+    }
+
+    /* Once we have a copy of the filename and a vnode object,
+    we can call vfs_open */
+    struct vnode *vnode;
+    int result = vfs_open(filenameCopy, flags, mode, &vnode);
+    if (result) {
+        return result;
+    }
+
+    /* Next we acquire the lock for the open file table,
+    as we are about to add an entry */
+    lock_acquire(oft->oftLock);
+
+    /* To determine where to add this new entry to the open file table,
+    we search for the first available index in the array */
+    int oftIndex = -1;
+    int i = 0;
+    while (i < OPEN_MAX) {
+
+        if (oft->oftArray[i] == NULL) {
+            oftIndex = i;
+            break;
+        }
+
+        i++;
+    }
+
+    /* If we couldn't find a free entry in the open file table,
+    we return an error stating it is full */
+    if (!oftIndex) {
+        vfs_close(vnode);
+        lock_release(oft->oftLock);
+        return ENFILE;
+    }
+
+    /* We also need to find the first available free entry
+    in the processes' file descriptor table */
+    int fdtIndex = -1;
+    int j = 0;
+    while (j < OPEN_MAX) {
+        
+        if (curproc->p_fdt[j] == -1) {
+            fdtIndex = j;
+            break;
+        }
+
+        j++;
+    }
+
+    /* If we couldn't find a free entry in the file descriptor table,
+    we return an error stating it is full */
+    if (!fdtIndex) {
+        vfs_close(vnode);
+        lock_release(oft->oftLock);
+        return EMFILE;
+    }
+
+    /* Given there is a free entry in the open file table,
+    we allocate memory on the heap for it */
+    oft->oftArray[oftIndex] = kmalloc(sizeof(oftEntry));
+
+    /* If this failed, we return an error signalling we are out of memory */
+    if (oft->oftArray == NULL) {
+        vfs_close(vnode);
+        lock_release(oft->oftLock);
+        return ENOMEM;
+    }
+
+    /* We assign the processes' file descriptor to the index
+    in the global open file table */
+    curproc->p_fdt[fdtIndex] = oftIndex;
+
+    /* Then we assign all of the information needed 
+    in the open file table entry */
+    oft->oftArray[oftIndex]->vnode = vnode;
+    oft->oftArray[oftIndex]->fp = 0;
+    oft->oftArray[oftIndex]->flags = flags;
+    oft->oftArray[oftIndex]->referenceCount = 1;
+
+    /* Once we are done adding this entry, we can release the lock */
+    lock_release(oft->oftLock);
+
+    /* We return the file handle */
+    return fdtIndex;
+
 }
 
 /* Read data from file */
