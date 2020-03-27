@@ -70,7 +70,7 @@ runprogram(char *progname)
 	}
 
 	/* Initialise the file descriptor array for the current process*/
-	result = consoleDeviceSetup();
+	result = fileDescriptorTableSetup();
 	if (result) {
 		return result;
 	}

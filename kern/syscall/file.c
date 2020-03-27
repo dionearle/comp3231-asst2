@@ -276,6 +276,7 @@ ssize_t sys_read(int fd, void *buf, size_t buflen, int32_t* retval) {
     /* Call the VOP_READ macro*/
     int result = VOP_READ(oft->oftArray[oftIndex]->vnode, u);
     if (result) {
+        lock_release(oft->oftLock);
         return result;
     }
 
@@ -338,6 +339,7 @@ ssize_t sys_write(int fd, void *buf, size_t nbytes, int32_t* retval) {
     /* Call the VOP_READ macro*/
     result = VOP_WRITE(oft->oftArray[oftIndex]->vnode, u);
     if (result) {
+        lock_release(oft->oftLock);
         return result;
     }
 
@@ -377,6 +379,7 @@ off_t sys_lseek(int fd, off_t pos, int whence, int64_t* retval) {
     /* Check that the given file is seekable */
     bool isSeekable = VOP_ISSEEKABLE(oft->oftArray[oftIndex]->vnode);
     if (!isSeekable){
+        lock_release(oft->oftLock);
         return ESPIPE;
     }
 
@@ -398,6 +401,7 @@ off_t sys_lseek(int fd, off_t pos, int whence, int64_t* retval) {
         struct stat *fStat = kmalloc(sizeof(struct stat));
         int result = VOP_STAT(oft->oftArray[oftIndex]->vnode, fStat);
         if (result) {
+            lock_release(oft->oftLock);
             return result;
         }
 
@@ -408,11 +412,13 @@ off_t sys_lseek(int fd, off_t pos, int whence, int64_t* retval) {
         kfree(fStat);
     }
     else {
+        lock_release(oft->oftLock);
         return EINVAL;
     }
 
     /* Check that the new file pointer is valid*/
     if (newFP < 0){
+        lock_release(oft->oftLock);
         return EINVAL;
     }
 
@@ -499,7 +505,9 @@ int sys_dup2(int oldfd, int newfd, int32_t* retval) {
     /* Cloning a file handle onto itself has no effect,
     so simply return newfd */
     if (oldfd == newfd) {
-        return newfd;
+        lock_release(oft->oftLock);
+        *retval = newfd;
+        return 0;
     }
 
     /* If newfd names an already open file, that file is closed */
