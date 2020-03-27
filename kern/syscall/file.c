@@ -143,7 +143,7 @@ int sys_open(userptr_t filename, int flags, mode_t mode) {
     /* Once we have a copy of the filename and a vnode object,
     we can call vfs_open */
     struct vnode *vnode;
-    int result = vfs_open(filenameCopy, flags, mode, &vnode);
+    result = vfs_open(filenameCopy, flags, mode, &vnode);
     if (result) {
         return result;
     }
@@ -262,6 +262,9 @@ int sys_close(int fd) {
         return EBADF;
     }
 
+    /* Here we declare this entry in the file descriptor table as closed */
+    curproc->p_fdt[fd] = -1;
+
     /* If there are other references to this vnode,
     we simply decrement the reference count */
     if (oft->oftArray[oftIndex]->referenceCount > 1) {
@@ -276,14 +279,65 @@ int sys_close(int fd) {
     /* After removing this entry, we can release the lock */
     lock_release(oft->oftLock);
 
-    /* Finally we declare this entry in the file descriptor table as closed */
-    curproc->p_fdt[fd] = -1;
-
     return 0;
 }
 
 /* Clone file handles */
 int sys_dup2(int oldfd, int newfd) {
-    // TODO
+    
+    /* First we want to match the oldfd to the entry in the open file table */
+    int oftIndex = curproc->p_fdt[oldfd];
+
+    /* Then we check that the oldfd is a valid file handle */
+    if (oldfd < 0 || oldfd >= OPEN_MAX || oftIndex == -1) {
+        return EBADF;
+    }
+
+    /* We also want to check that the value of newfd can be
+    a valid file handle */
+    if (newfd < 0 || newfd >= OPEN_MAX) {
+        return EBADF;
+    }
+
+    /* Next we acquire the lock for the open file table,
+    as we are about to add an entry */
+    lock_acquire(oft->oftLock);
+
+    /* We also check to see if the reference to the open file table is valid */
+    if (oft->oftArray[oftIndex] == NULL) {
+        lock_release(oft->oftLock);
+        return EBADF;
+    }
+
+    /* Cloning a file handle onto itself has no effect,
+    so simply return newfd */
+    if (oldfd == newfd) {
+        return newfd;
+    }
+
+    /* If newfd names an already open file, that file is closed */
+    if (curproc->p_fdt[newfd] != -1) {
+
+        /* We close the file by using our implemented sys_close */
+        int result = sys_close(newfd);
+        if (result) {
+            lock_release(oft->oftLock);
+            return result;
+        }
+    }
+
+    /* We then clone the file handle oldfd onto the file handle newfd */
+    curproc->p_fdt[newfd] = curproc->p_fdt[oldfd];
+
+    /* For the entry in the open file table, we want to increment
+    the reference count, as two fds are now pointing to this vnode */
+    oft->oftArray[oftIndex]->referenceCount++;
+
+    /* We can now release the lock after cloning the file handle */
+    lock_release(oft->oftLock);
+
+    /* We simply return newfd */
+    return newfd;
+
 }
 
