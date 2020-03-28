@@ -99,7 +99,7 @@ int consoleDeviceSetup(void) {
         oft->oftArray[i] = kmalloc(sizeof(oftEntry));
 
         /* If this failed, we return an error signalling we are out of memory */
-        if (oft->oftArray == NULL) {
+        if (oft->oftArray[i] == NULL) {
             vfs_close(v);
             lock_release(oft->oftLock);
             return ENOMEM;
@@ -169,7 +169,7 @@ int sys_open(userptr_t filename, int flags, mode_t mode, int32_t* retval) {
 
     /* If we couldn't find a free entry in the open file table,
     we return an error stating it is full */
-    if (!oftIndex) {
+    if (oftIndex == -1) {
         vfs_close(vnode);
         lock_release(oft->oftLock);
         return ENFILE;
@@ -191,7 +191,7 @@ int sys_open(userptr_t filename, int flags, mode_t mode, int32_t* retval) {
 
     /* If we couldn't find a free entry in the file descriptor table,
     we return an error stating it is full */
-    if (!fdtIndex) {
+    if (fdtIndex == -1) {
         vfs_close(vnode);
         lock_release(oft->oftLock);
         return EMFILE;
@@ -223,25 +223,11 @@ int sys_open(userptr_t filename, int flags, mode_t mode, int32_t* retval) {
     lock_release(oft->oftLock);
 
     /* We return the file handle */
-    *retval = (int32_t)fdtIndex;
+    *retval = fdtIndex;
+
     return 0;
 
 }
-
-
-// /* Create a uio struct for use with VOP_READ and VOP_WRITE */
-// void uio_uinit(struct iovec *iov, struct uio *u, userptr_t buf, size_t len, off_t offset, enum uio_rw rw){
-//     iov->iov_ubase  = buf;
-//     iov->iov_len    = len;
-
-//     u->uio_iov      = iov;
-//     u->uio_iovcnt   = 1;
-//     u->uio_offset   = offset;
-//     u->uio_resid    = len;
-//     u->uio_segflg   = UIO_USERSPACE;
-//     u->uio_rw       = rw;
-//     u->uio_space    = proc_getas();
-// }
 
 /* Read data from file */
 ssize_t sys_read(int fd, void *buf, size_t buflen, int32_t* retval) {
@@ -260,12 +246,16 @@ ssize_t sys_read(int fd, void *buf, size_t buflen, int32_t* retval) {
     /* Set up the kernel buffer */
     void *safeBuff[buflen];
 
-
     /* Next we acquire the lock for the open file table, as we are about to modify the file pointer */
     lock_acquire(oft->oftLock);
 
-    /* Then we load the current offset (file pointer) */
+    /* We also need to make sure the file can be read */
+    if (oft->oftArray[oftIndex]->flags == O_WRONLY) {
+        lock_release(oft->oftLock);
+        return EBADF;
+    }
 
+    /* Then we load the current offset (file pointer) */
     int offset = oft->oftArray[oftIndex]->fp;
 
     /* Next create the uio variable that needs to be passed to VOP_READ*/
@@ -279,6 +269,9 @@ ssize_t sys_read(int fd, void *buf, size_t buflen, int32_t* retval) {
         lock_release(oft->oftLock);
         return result;
     }
+
+    // We return the amount read
+    *retval = u->uio_offset - oft->oftArray[oftIndex]->fp;
 
     /* Update the offset (file pointer) */
     oft->oftArray[oftIndex]->fp = u->uio_offset;
@@ -296,9 +289,6 @@ ssize_t sys_read(int fd, void *buf, size_t buflen, int32_t* retval) {
         return result;
     }
 
-
-    /* Return the amount read*/
-    *retval = u->uio_resid;
     return 0;
 }
 
@@ -323,12 +313,16 @@ ssize_t sys_write(int fd, void *buf, size_t nbytes, int32_t* retval) {
         return result;
     }
 
-
     /* Next we acquire the lock for the open file table, as we are about to modify the file pointer */
     lock_acquire(oft->oftLock);
 
-    /* Then we load the current offset (file pointer) */
+    /* We also need to make sure the file can be written to */
+    if (oft->oftArray[oftIndex]->flags == O_RDONLY) {
+        lock_release(oft->oftLock);
+        return EBADF;
+    }
 
+    /* Then we load the current offset (file pointer) */
     int offset = oft->oftArray[oftIndex]->fp;
 
     /* Next create the uio variable that needs to be passed to VOP_READ*/
@@ -336,12 +330,15 @@ ssize_t sys_write(int fd, void *buf, size_t nbytes, int32_t* retval) {
     struct uio *u = kmalloc(sizeof(struct uio));
     uio_kinit(iov, u, safeBuff, nbytes, offset, UIO_WRITE);
 
-    /* Call the VOP_READ macro*/
+    /* Call the VOP_WRITE macro*/
     result = VOP_WRITE(oft->oftArray[oftIndex]->vnode, u);
     if (result) {
         lock_release(oft->oftLock);
         return result;
     }
+
+    // We return the amount written
+    *retval = u->uio_offset - oft->oftArray[oftIndex]->fp;
 
     /* Update the offset (file pointer) */
     oft->oftArray[oftIndex]->fp = u->uio_offset;
@@ -353,8 +350,6 @@ ssize_t sys_write(int fd, void *buf, size_t nbytes, int32_t* retval) {
     kfree(u);
     kfree(iov);
 
-    /* Return the amount read*/
-    *retval = u->uio_resid;
     return 0;
 }
 

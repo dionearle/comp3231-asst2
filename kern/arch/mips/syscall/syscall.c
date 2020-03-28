@@ -167,9 +167,8 @@ syscall(struct trapframe *tf)
 		/* Success. */
 		if (retval64) {
 			split64to32(retval64, &tf->tf_v0, &tf->tf_v1);
-		} else {
-			tf->tf_v0 = retval;
 		}
+		tf->tf_v0 = retval;
 		tf->tf_a3 = 0;      /* signal no error */
 	}
 
