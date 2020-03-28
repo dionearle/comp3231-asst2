@@ -41,6 +41,9 @@ int fileDescriptorTableSetup(void);
 /* Attach stdout and stderr to the console device */
 int consoleDeviceSetup(void);
 
-/* Attach stdout and stderr to the console device */
-void uio_uinit(struct iovec *iov, struct uio *u, userptr_t buf, size_t len, off_t offset, enum uio_rw rw);
+// /* Attach stdout and stderr to the console device */
+// void uio_uinit(struct iovec *iov, struct uio *u, userptr_t buf, size_t len, off_t offset, enum uio_rw rw);
+
+
+
 #endif /* _FILE_H_ */

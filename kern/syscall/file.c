@@ -229,19 +229,19 @@ int sys_open(userptr_t filename, int flags, mode_t mode, int32_t* retval) {
 }
 
 
-/* Create a uio struct for use with VOP_READ and VOP_WRITE */
-void uio_uinit(struct iovec *iov, struct uio *u, userptr_t buf, size_t len, off_t offset, enum uio_rw rw){
-    iov->iov_ubase  = buf;
-    iov->iov_len    = len;
+// /* Create a uio struct for use with VOP_READ and VOP_WRITE */
+// void uio_uinit(struct iovec *iov, struct uio *u, userptr_t buf, size_t len, off_t offset, enum uio_rw rw){
+//     iov->iov_ubase  = buf;
+//     iov->iov_len    = len;
 
-    u->uio_iov      = iov;
-    u->uio_iovcnt   = 1;
-    u->uio_offset   = offset;
-    u->uio_resid    = len;
-    u->uio_segflg   = UIO_USERSPACE;
-    u->uio_rw       = rw;
-    u->uio_space    = proc_getas();
-}
+//     u->uio_iov      = iov;
+//     u->uio_iovcnt   = 1;
+//     u->uio_offset   = offset;
+//     u->uio_resid    = len;
+//     u->uio_segflg   = UIO_USERSPACE;
+//     u->uio_rw       = rw;
+//     u->uio_space    = proc_getas();
+// }
 
 /* Read data from file */
 ssize_t sys_read(int fd, void *buf, size_t buflen, int32_t* retval) {
@@ -271,7 +271,7 @@ ssize_t sys_read(int fd, void *buf, size_t buflen, int32_t* retval) {
     /* Next create the uio variable that needs to be passed to VOP_READ*/
     struct iovec *iov = kmalloc(sizeof(struct iovec));
     struct uio *u = kmalloc(sizeof(struct uio));
-    uio_uinit(iov, u, (userptr_t)safeBuff, buflen, offset, UIO_READ);
+    uio_kinit(iov, u, safeBuff, buflen, offset, UIO_READ);
 
     /* Call the VOP_READ macro*/
     int result = VOP_READ(oft->oftArray[oftIndex]->vnode, u);
@@ -334,7 +334,7 @@ ssize_t sys_write(int fd, void *buf, size_t nbytes, int32_t* retval) {
     /* Next create the uio variable that needs to be passed to VOP_READ*/
     struct iovec *iov = kmalloc(sizeof(struct iovec));
     struct uio *u = kmalloc(sizeof(struct uio));
-    uio_uinit(iov, u, (userptr_t)safeBuff, nbytes, offset, UIO_WRITE);
+    uio_kinit(iov, u, safeBuff, nbytes, offset, UIO_WRITE);
 
     /* Call the VOP_READ macro*/
     result = VOP_WRITE(oft->oftArray[oftIndex]->vnode, u);
